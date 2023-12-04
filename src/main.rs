@@ -43,6 +43,10 @@ fn start_data_transfer(server_address: &str, branch_code: &str, report_file_path
 
             // Send branch code back to the server
             let branch_code = format!("bcode~{}", branch_code);
+            let branch_length = branch_code.len();
+            if let Err(e) = stream.write_all(&(branch_length as u32).to_be_bytes()) {
+                error!("Error writing the length: {:?}", e)
+            }
             if let Err(e) = stream.write_all(branch_code.as_bytes()){
                 error!("Error writing branch message: {:?}", e);
                 // return;
@@ -52,10 +56,17 @@ fn start_data_transfer(server_address: &str, branch_code: &str, report_file_path
             println!("Branch code: {}", branch_code);
     
             // Receive an acknowldgement from the server
-            let mut response = String::new();
-            if let Err(e) = stream.read_to_string(&mut response){
+            // Reading the "OK" lenght
+            let mut resp_length_buff = [0; 4];
+            if let Err(e) = stream.read_exact(&mut resp_length_buff){
                 error!("Error reading response: {:?} ", e)
             };
+            let length = u32::from_be_bytes(resp_length_buff);
+            
+            // Reading the "Ok" response
+            let mut response_buff = vec![0; length as usize];
+            stream.read_exact(&mut response_buff).expect("Failed to read response");
+            let response = String::from_utf8_lossy(&response_buff);
             println!("1st response: {}", response);
             
             if response.trim() == "OK" {
