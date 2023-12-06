@@ -44,39 +44,60 @@ fn start_data_transfer(server_address: &str, branch_code: &str, report_file_path
             // Send branch code back to the server
             let branch_code = format!("bcode~{}", branch_code);
             let branch_length = branch_code.len();
+            // Sending branch length
             if let Err(e) = stream.write_all(&(branch_length as u32).to_be_bytes()) {
                 error!("Error writing the length: {:?}", e)
             }
+            // Sending branch code.
             if let Err(e) = stream.write_all(branch_code.as_bytes()){
                 error!("Error writing branch message: {:?}", e);
                 // return;
+                println!("Branch code: {}", branch_code);
             }else {
                 println!("Branch code sent successfully")
             };
-            println!("Branch code: {}", branch_code);
     
             // Receive an acknowldgement from the server
             // Reading the "OK" lenght
+            println!("Waiting for Ok message from server");
             let mut resp_length_buff = [0; 4];
             if let Err(e) = stream.read_exact(&mut resp_length_buff){
-                error!("Error reading response: {:?} ", e)
+                error!("Error reading response: {:?} ", e);
+                return;
             };
             let length = u32::from_be_bytes(resp_length_buff);
             
             // Reading the "Ok" response
             let mut response_buff = vec![0; length as usize];
-            stream.read_exact(&mut response_buff).expect("Failed to read response");
+            if let Err(e) = stream.read_exact(&mut response_buff) {
+              error!("Failed to read response: {:?}", e) ;
+              return; 
+            };
+            println!("Response recived");
+
             let response = String::from_utf8_lossy(&response_buff);
             println!("1st response: {}", response);
             
             if response.trim() == "OK" {
                 // Send base64 content to the server
                 let file_message = format!("~{}~", base64_content);
-                if let Err(e) = stream.write(file_message.as_bytes()){
+
+                let file_message_length = file_message.len();
+                if let Err(e) = stream.write_all(&(file_message_length as u32).to_be_bytes()) {
+                    error!("Error writing length of file message: {:?} ", e);
+                    return;
+                }
+
+                if let Err(e) = stream.write_all(file_message.as_bytes()){
                     error!("Error writing file message to stream: {:?}", e);
-                    // return;
+                    return;
                 };
-    
+
+                if let Err(e) = stream.flush() {
+                    eprintln!("Error flushing stream: {:?}", e);
+                    return;
+                }
+                    
                 // Receive an acknowledgement from the server
                 let mut response = String::new();
                 if let Err(e) = stream.read_to_string(&mut response){
